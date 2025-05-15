@@ -3,8 +3,8 @@ import urllib.request
 import urllib.parse # URL 인코딩 모듈
 import time
 
-client_id = "API key 입력"
-client_secret = "w8FtGreOKb"
+client_id = "네이버 API id"
+client_secret = "네이버 API secret"
 # 네이버 API key 
 
 query = urllib.parse.quote('"최저임금법"')
