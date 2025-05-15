@@ -5,7 +5,7 @@ import time
 
 client_id = "네이버 API id"
 client_secret = "네이버 API secret"
-# 네이버 API key 
+# 네이버 API key 입력
 
 query = urllib.parse.quote('"최저임금법"')
 # URL에 맞게 인코딩
