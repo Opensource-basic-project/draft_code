@@ -1,18 +1,17 @@
 import urllib.request
 import urllib.parse
-import xml.etree.ElementTree as ET
+import json
 import time
 from collections import defaultdict, Counter
-from datetime import datetime, timedelta
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
 import matplotlib.pyplot as plt
-import matplotlib.font_manager as fm
 import platform
 import numpy as np
-from dateutil.relativedelta import relativedelta
 
-open_api_key = "AGE key 입력"
+open_api_key = "API key 입력"
 
-# 한국어 폰트 설정
+#  한국어 폰트 설정
 if platform.system() == 'Windows':
     plt.rc('font', family='Malgun Gothic')
 elif platform.system() == 'Darwin':
@@ -25,7 +24,7 @@ plt.rcParams['axes.unicode_minus'] = False
 AGE_PERIODS = {
     20: (datetime(2016, 5, 30), datetime(2020, 5, 29)),
     21: (datetime(2020, 5, 30), datetime(2024, 5, 29)),
-    22: (datetime(2024, 5, 30), datetime(2028, 5, 29)),  # 22대는 임기 중이므로 임시 종료일
+    22: (datetime(2024, 5, 30), datetime(2028, 5, 29)),  # 22대 임시 종료일
 }
 
 def get_bills_by_age(age):
@@ -37,7 +36,7 @@ def get_bills_by_age(age):
     while True:
         params = {
             "KEY": open_api_key,
-            "Type": "xml",
+            "Type": "json",
             "pIndex": p_index,
             "pSize": p_size,
             "AGE": age
@@ -49,23 +48,30 @@ def get_bills_by_age(age):
             req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
             response = urllib.request.urlopen(req)
             data = response.read()
+            json_data = json.loads(data)
 
-            root = ET.fromstring(data)
-            rows = root.findall("row")
-            if not rows:
+            items = json_data.get("TVBPMBILL11", [])
+            if len(items) < 2 or "row" not in items[1]:
                 break
 
+            rows = items[1]["row"]
+            if isinstance(rows, dict):
+                rows = [rows]
+
             for row in rows:
-                propose_dt = row.findtext("PROPOSE_DT", "")
-                bill_name = row.findtext("BILL_NAME", "")
+                propose_dt = row.get("PROPOSE_DT", "")
+                bill_name = row.get("BILL_NAME", "")
                 if propose_dt and bill_name:
                     bills.append((propose_dt, bill_name, age))
+
+            if len(rows) < p_size:
+                break
 
             p_index += 1
             time.sleep(0.5)
 
         except Exception as e:
-            print(f" AGE {age} 페이지 {p_index} 실패: {e}")
+            print(f"❌ AGE {age} 페이지 {p_index} 실패: {e}")
             break
 
     return bills
@@ -93,7 +99,7 @@ def process_bills(bills, start_year, end_year):
 
     month_counts = Counter()
     month_bills = defaultdict(list)
-    age_counts = Counter()  # 추가: 각 AGE별 총 법안 수
+    age_counts = Counter()
 
     for propose_dt, name, age in bills:
         try:
@@ -102,7 +108,7 @@ def process_bills(bills, start_year, end_year):
             if months[0] <= month_str <= months[-1]:
                 month_counts[month_str] += 1
                 month_bills[month_str].append(name)
-                age_counts[age] += 1  # AGE별 누적
+                age_counts[age] += 1
         except ValueError:
             continue
 
@@ -115,13 +121,12 @@ def process_bills(bills, start_year, end_year):
 
     return months, month_counts, month_bills, vertical_lines, age_counts
 
-
 def plot_bills(months, month_counts, vertical_lines):
     x = np.arange(len(months))
     y = np.array([month_counts.get(m, 0) for m in months])
 
     fig, ax = plt.subplots(figsize=(16, 6))
-    
+
     # 꺾은선 그래프
     ax.plot(x, y, color='blue', linewidth=2, marker='o', markersize=5)
 
@@ -148,8 +153,7 @@ def plot_bills(months, month_counts, vertical_lines):
     for i, m in enumerate(months):
         year = m[:4]
         if year != prev_year:
-            # 해당 연도 첫 달의 x좌표
-            year_positions.append(i + 5.5)  # 가운데 정렬
+            year_positions.append(i + 5.5)
             year_labels.append(year)
             prev_year = year
 
@@ -163,7 +167,7 @@ def plot_bills(months, month_counts, vertical_lines):
     for age, idx in vertical_lines.items():
         ax.axvline(x=idx, color='lightblue', linestyle='--', alpha=0.8)
         ax.text(idx + 0.5, max(y) * 0.95, f"{age}대", rotation=90,
-                 verticalalignment='top', color='skyblue', fontsize=10)
+                verticalalignment='top', color='skyblue', fontsize=10)
 
     plt.tight_layout()
     plt.show()
@@ -187,15 +191,18 @@ if __name__ == "__main__":
     #2016~2025 조회가능 (20대수 이전 == 2016 5월 이전 데이터는 조회불가)
     #갱신되는 대로 2025년도 법안 조회 모두가능
 
-    start_year = 2024 
-    end_year = 2024  
-    # 2024 5월~12월 (21대 국회부터 24년 끝까지) >> 7028 확인완료
-    # 2016~2025 대수별 대조 완료 >> 24141  25858  10269 확인완료
-    
+    start_year = 2024
+    end_year = 2024
     start_age = 20
     end_age = 22
+
+    
+    # 2024 5월~12월 (21대 국회부터 24년 끝까지) >> 7028 확인완료
+    # 2016~2025 대수별 대조 완료 >> 24141  25858  10269 확인완료
 
     bills = collect_bills(start_age, end_age)
     months, month_counts, month_bills, vertical_lines, age_counts = process_bills(bills, start_year, end_year)
     print_monthly_info(months, month_counts, month_bills, age_counts)
     plot_bills(months, month_counts, vertical_lines)
+
+
